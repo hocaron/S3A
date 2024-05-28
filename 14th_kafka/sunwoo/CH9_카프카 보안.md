@@ -13,7 +13,7 @@
 웹페이지에 https와 마찬가지로 카프카에서도 클라이언트와의 암호화 통신을 위해 SSL을 사용한다.
 
 ### SSL 동작방식
-SSL 의 핵심은 암호화 입니다. 보안과 성능상의 이유로 두 가지 암호화 기법을 혼용해서 사용하고 있습니다.
+SSL 의 핵심은 암호화 입니다. 보안과 성능상의 이유로 두 가지 암호화 기법을 혼용해서 사용하고 있다.
 - 대칭키  
 암호화를 할 때 사용하는 일종의 비밀번호를 키라고 합니다. 이 키를 활용해 복호화를 진행한다.
 - 공개키  
@@ -30,10 +30,19 @@ TLS는 Netscape가 개발한 SSL(Secure Sockets Layer)이라고 불리는 이전
 SASL(Simple Authentication and Security Layer) : 인터넷 프로토콜에서 인증과 데이터 보안을 위한 프레임워크로서 카프카에서도 사용된다.
 
 ### SASL 매커니즘
-- SASL/GSSAPI : GSSAPI는 커버로스 인증 방식으로 많이 사용되는 인증 방식 중 하나이며 회사 내부에 별도의 커버로스 서버가 있는 환경이라면 커버로스 인증 방식을 사용하는 것이 좋다. 렐름(REALM)이라는 설정이 필요하다. 되도록 하나의 렐름으로 모든 애플리케이션을 적용하는 것을 추천
-- SASL/PLAIN : PlAIN은 아이디와 비밀번호를 텍스트 형태로 사용하는 방법으로 운영 환경보다는 개발 환경에서 테스트 등의 목적으로 활용한다.
-SASL/SCRAM-SHA256, SASL/SCRAM-SHA-512 : 본래의 암호에 해시된 내용을 추가하여 저장한다는 의미인 솔티드 챌린지 응답 인증 매커니즘(Salted Challenge Response Authentication Mechanism)의 약어로 인증 정보를 주키퍼에 저장해 사용하는 방식으로서, 별도의 커버로스 서버가 구성되어 있지 않은 환경에서 카프카의 인증을 구성해야 할 때 가장 좋은 방식이다.
-- SASL/OAUTHBEARER : OAUTH 방식은 카프카에서 제공하는 기능이 매우 한정적이라 개발 환경 정도에만 적용 가능한 수준이다.
+- SASL/PLAINTEXT (0.9.0.0 ~)
+  - PLAINTEXT로 username/password 를 설정하여 인증을 하는 가장 기본적이나 고전적인 방식
+  - PLAINTEXT로 사용되는 username과 password는 kafka 브로커에 미리 저장되어 있어야 하며, 변경될 때마다 재시작이 필요
+- SASL/SCRAM (0.10.0.0 ~)
+  - PBKDF2 암호화 알고리즘을 활용해 생성된 해시를 활용하며 username/password 조합에 salt / count를 부가적으로 전달하여 보안을 높인 방법
+  - username 과 password의 해시는 zookeeper에 저장되므로 브로커를 재부팅 불 필요
+  - 네트워크에서 자격증명이 PAINTEXT로 전송되지 않도록 ssl 암호화를 활성화
+- SASL/OAUITHBEARER (2.0 ~)
+    - OAuth2 토큰을 기반으로 인증하는 방법으로 KIP(Kafka Improvement Proposals)를 통해 읽습니다.
+- SASL/KERBEROS(GSSAPI) (0.9.0.0 ~)
+    - 노드간 통신에서 보안을 client가 티켓을 발급받아 본인의 신원을 증명하면 인증하는 매우 안전한 방법
+  - 별도의 인증 및 티켓검증용 서버가 필요하며 서버가 불능이 될 경우 인증 불가하므로 관리에 주의
+
 ![img_32.png](img_32.png)
 
 ## 9.1.3 권한(ACL)
@@ -66,13 +75,10 @@ AlterConfigs
 IdempotentWrite
 All
 
-
-출처: https://always-kimkim.tistory.com/entry/kafka101-security [언제나 김김:티스토리]
-
 # 9.2 SSL을 이용한 카프카 암호화
 키스토어(KeyStore)라 불리는 인터페이스를 통해 퍼블릭 키, 프라이빗 키, 인증서를 추상화해 제공한다.
 
-## 설정 과정
+## SSL 설정 과정
 트러스트스토어 생성 -> 키스토어 생성 -> CSR 생성 및 서명 -> 키스토어에 인증서 추가 -> 브로커 Config 설정 (server.properties) -> SSL 통신 테스트
 ![img_33.png](img_33.png)
 
@@ -82,8 +88,19 @@ All
 
 # 9.3 커버로스(SASL)를 이용한 카프카 인증
 ## 커버로스
-티켓을 기반으로 하는 컴퓨터 네트워크 인증 프로토콜, 사용자의 신원을 식별하기 위한 용도로 사용, 싱글 사인온(Single Sign-On, SSO)을 지원
+- Kerberos는 티켓을 기반으로 동작하는 암호화 프로토콜로서 클라이언트/ 서버 사이의 인증을 제공하도록 설계되었다.
+- 대칭키 암호기법을 사용하며 윈도우 서버 운영체제의 기본 인증방법으로 활용되고 있다. (LDAP)
 
+Kerberos 서버군에는 AS(Authentication Server), TGS(Ticket Granting Server)가 있다. 각 서버의 역할을 간략화 하면 다음과 같다.
 
-1. 카프카 클라이언트의 인증 확인 절차 및 티켓 발급
-2. 클라이언트는 티켓으로 서버에 인증
+- AS : 실질적 인증 수행
+- TGS : 티켓 부여
+
+그리고 추가로 기억해야 할 요소로 SS(Service Server), Ticket, Principals이 있다.
+
+- SS : 서비스가 구현된 Server. 인증 처리가 필요한 서비스
+- Ticket : 사용자에 대한 인증 확인을 위한 토큰. 다른 SS와 통신 시 패스워드 재입력을 필요하지 않게 함.
+- Principals : 인증을 위해 Kerberos 프로토콜을 사용하는 모든 개체
+
+### 커버로스 동작 방식
+![img_34.png](img_34.png)
